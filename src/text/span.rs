@@ -1,5 +1,6 @@
 use std::fmt;
 
+#[derive(Clone)]
 pub struct Pos {
     idx: usize,
     line: usize,
@@ -22,6 +23,24 @@ impl Pos {
             col: self.col + count,
         }
     }
+
+    pub fn span_to(&self, end: Pos) -> Span {
+        Span {
+            start: self.clone(),
+            end: end.clone(),
+        }
+    }
+
+    pub fn next(&mut self, c: char) {
+        if c == '\n' {
+            self.line += 1;
+            self.col = 1;
+        } else {
+            self.col += 1;
+        }
+
+        self.idx += 1;
+    }
 }
 
 impl fmt::Display for Pos {
@@ -36,6 +55,7 @@ impl fmt::Debug for Pos {
     }
 }
 
+#[derive(Clone)]
 pub struct Span {
     start: Pos,
     end: Pos,
@@ -43,11 +63,17 @@ pub struct Span {
 
 impl Span {
     pub fn from(&self, count: usize) -> Span {
-        Span { start: self.end, end: self.end.from(count) }
+        Span {
+            start: self.end,
+            end: self.end.from(count),
+        }
     }
 
     pub fn from_pos(start: Pos, count: usize) -> Span {
-        Span { start: start, end: start.from(count) }
+        Span {
+            start: start,
+            end: start.from(count),
+        }
     }
 }
 

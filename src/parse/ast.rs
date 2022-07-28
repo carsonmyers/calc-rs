@@ -5,6 +5,24 @@ pub struct Item {
     kind: ItemKind,
 }
 
+impl Item {
+    pub fn get_expr(&self) -> Option<Expr> {
+        if let ItemKind::Expr(e) = self.kind {
+            Some(e)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_stmt(&self) -> Option<Stmt> {
+        if let ItemKind::Stmt(s) = self.kind {
+            Some(s)
+        } else {
+            None
+        }
+    }
+}
+
 pub enum ItemKind {
     Expr(Expr),
     Stmt(Stmt),
@@ -13,6 +31,30 @@ pub enum ItemKind {
 pub struct Expr {
     span: Span,
     kind: ExprKind,
+}
+
+impl Expr {
+    pub fn span(&self) -> Span {
+        self.span
+    }
+
+    pub fn is_value(&self) -> bool {
+        match self.kind {
+            ExprKind::Lit(..) | ExprKind::Var(..) | ExprKind::Ref(..) | ExprKind::Fn(..) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_infix(&self) -> bool {
+        match self.kind {
+            ExprKind::Add(..)
+            | ExprKind::Sub(..)
+            | ExprKind::Mul(..)
+            | ExprKind::Div(..)
+            | ExprKind::Pow(..) => true,
+            _ => false,
+        }
+    }
 }
 
 pub enum ExprKind {
@@ -26,7 +68,7 @@ pub enum ExprKind {
     Mul(Box<Expr>, Box<Expr>),
     Div(Box<Expr>, Box<Expr>),
     Pow(Box<Expr>, Box<Expr>),
-    Fn(String, Vec<Expr>)
+    Fn(String, Vec<Expr>),
 }
 
 pub struct Stmt {
