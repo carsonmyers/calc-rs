@@ -1,47 +1,47 @@
-use crate::ir::instruction::Inst;
+use crate::ir::program::Instruction;
 use crate::parse::Expr;
 
 pub trait Translate {
-    fn translate(&self) -> Vec<Inst>;
+    fn translate(&self) -> Vec<Instruction>;
 }
 
 impl Translate for Expr {
-    fn translate(&self) -> Vec<Inst> {
+    fn translate(&self) -> Vec<Instruction> {
         match self {
-            Expr::Number(num) => vec![Inst::PushNumber(*num)],
+            Expr::Number(num) => vec![Instruction::PushNumber(*num)],
             Expr::Add(lhs, rhs) => {
                 let mut inst = lhs.translate();
                 inst.append(&mut rhs.translate());
-                inst.push(Inst::Add);
+                inst.push(Instruction::Add);
                 inst
             }
             Expr::Sub(lhs, rhs) => {
                 let mut inst = lhs.translate();
                 inst.append(&mut rhs.translate());
-                inst.push(Inst::Sub);
+                inst.push(Instruction::Sub);
                 inst
             }
             Expr::Mul(lhs, rhs) => {
                 let mut inst = lhs.translate();
                 inst.append(&mut rhs.translate());
-                inst.push(Inst::Mul);
+                inst.push(Instruction::Mul);
                 inst
             }
             Expr::Div(lhs, rhs) => {
                 let mut inst = lhs.translate();
                 inst.append(&mut rhs.translate());
-                inst.push(Inst::Div);
+                inst.push(Instruction::Div);
                 inst
             }
             Expr::Pow(base, exponent) => {
                 let mut inst = base.translate();
                 inst.append(&mut exponent.translate());
-                inst.push(Inst::Pow);
+                inst.push(Instruction::Pow);
                 inst
             }
             Expr::Neg(expr) => {
                 let mut inst = expr.translate();
-                inst.push(Inst::Neg);
+                inst.push(Instruction::Neg);
                 inst
             }
         }
@@ -80,22 +80,22 @@ mod tests {
         );
 
         let expected = vec![
-            Inst::PushNumber(dec!(12)),
-            Inst::PushNumber(dec!(4)),
-            Inst::PushNumber(dec!(3)),
-            Inst::Sub,
-            Inst::Pow,
-            Inst::Neg,
-            Inst::PushNumber(dec!(3)),
-            Inst::PushNumber(dec!(9)),
-            Inst::PushNumber(dec!(2)),
-            Inst::Pow,
-            Inst::Sub,
-            Inst::Div,
-            Inst::PushNumber(dec!(5)),
-            Inst::PushNumber(dec!(10)),
-            Inst::Mul,
-            Inst::Add,
+            Instruction::PushNumber(dec!(12)),
+            Instruction::PushNumber(dec!(4)),
+            Instruction::PushNumber(dec!(3)),
+            Instruction::Sub,
+            Instruction::Pow,
+            Instruction::Neg,
+            Instruction::PushNumber(dec!(3)),
+            Instruction::PushNumber(dec!(9)),
+            Instruction::PushNumber(dec!(2)),
+            Instruction::Pow,
+            Instruction::Sub,
+            Instruction::Div,
+            Instruction::PushNumber(dec!(5)),
+            Instruction::PushNumber(dec!(10)),
+            Instruction::Mul,
+            Instruction::Add,
         ];
 
         let actual = ast.translate();

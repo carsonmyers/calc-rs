@@ -1,5 +1,5 @@
-mod instruction;
+mod program;
 mod translate;
 
-pub use instruction::Inst;
+pub use program::Instruction;
 pub use translate::Translate;
