@@ -1,46 +1,58 @@
-use crate::ir::program::Instruction;
-use crate::parse::Expr;
+use rust_decimal::Decimal;
 
-pub trait Translate {
-    fn translate(&self) -> Vec<Instruction>;
+use crate::translate::Expr;
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Instruction {
+    PushNumber(Decimal),
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Pow,
+    Neg,
 }
 
-impl Translate for Expr {
-    fn translate(&self) -> Vec<Instruction> {
+pub trait ToIr {
+    fn to_ir(&self) -> Vec<Instruction>;
+}
+
+impl ToIr for Expr {
+    fn to_ir(&self) -> Vec<Instruction> {
         match self {
             Expr::Number(num) => vec![Instruction::PushNumber(*num)],
             Expr::Add(lhs, rhs) => {
-                let mut inst = lhs.translate();
-                inst.append(&mut rhs.translate());
+                let mut inst = lhs.to_ir();
+                inst.append(&mut rhs.to_ir());
                 inst.push(Instruction::Add);
                 inst
             }
             Expr::Sub(lhs, rhs) => {
-                let mut inst = lhs.translate();
-                inst.append(&mut rhs.translate());
+                let mut inst = lhs.to_ir();
+                inst.append(&mut rhs.to_ir());
                 inst.push(Instruction::Sub);
                 inst
             }
             Expr::Mul(lhs, rhs) => {
-                let mut inst = lhs.translate();
-                inst.append(&mut rhs.translate());
+                let mut inst = lhs.to_ir();
+                inst.append(&mut rhs.to_ir());
                 inst.push(Instruction::Mul);
                 inst
             }
             Expr::Div(lhs, rhs) => {
-                let mut inst = lhs.translate();
-                inst.append(&mut rhs.translate());
+                let mut inst = lhs.to_ir();
+                inst.append(&mut rhs.to_ir());
                 inst.push(Instruction::Div);
                 inst
             }
             Expr::Pow(base, exponent) => {
-                let mut inst = base.translate();
-                inst.append(&mut exponent.translate());
+                let mut inst = base.to_ir();
+                inst.append(&mut exponent.to_ir());
                 inst.push(Instruction::Pow);
                 inst
             }
             Expr::Neg(expr) => {
-                let mut inst = expr.translate();
+                let mut inst = expr.to_ir();
                 inst.push(Instruction::Neg);
                 inst
             }
@@ -98,7 +110,7 @@ mod tests {
             Instruction::Add,
         ];
 
-        let actual = ast.translate();
+        let actual = ast.to_ir();
 
         assert_eq!(expected, actual);
     }

@@ -2,8 +2,8 @@ use eyre::Result;
 use rust_decimal::Decimal;
 use rust_decimal::MathematicalOps;
 
-use crate::ir::Instruction;
 use crate::run::context::ExecutionContext;
+use crate::translate::Instruction;
 
 pub struct Executor {
     pub context: ExecutionContext,

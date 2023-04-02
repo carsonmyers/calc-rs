@@ -4,8 +4,8 @@ use std::str::Chars;
 use eyre::Result;
 use rust_decimal::Decimal;
 
-use crate::parse::ast::*;
-use crate::parse::error::Error;
+use crate::translate::ast::*;
+use crate::translate::error::Error;
 
 /// Parse a calculator statement or expression
 ///
