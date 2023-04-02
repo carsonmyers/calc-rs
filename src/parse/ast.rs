@@ -1,6 +1,8 @@
+use rust_decimal::Decimal;
+
 #[derive(Debug)]
 pub enum Expr {
-    Number(f64),
+    Number(Decimal),
     Add(Box<Expr>, Box<Expr>),
     Sub(Box<Expr>, Box<Expr>),
     Mul(Box<Expr>, Box<Expr>),
@@ -10,59 +12,59 @@ pub enum Expr {
 }
 
 impl Expr {
-    pub fn number(&self) -> Option<&f64> {
-        if let Expr::Number(number) = self {
-            Some(number)
-        } else {
-            None
-        }
+    pub fn number(&self) -> &Decimal {
+        let Expr::Number(number) = self else {
+            panic!("not a number");
+        };
+
+        number
     }
 
-    pub fn add(&self) -> Option<(&Expr, &Expr)> {
-        if let Expr::Add(lhs, rhs) = self {
-            Some((lhs, rhs))
-        } else {
-            None
-        }
+    pub fn add(&self) -> (&Expr, &Expr) {
+        let Expr::Add(lhs, rhs) = self else {
+            panic!("not an addition");
+        };
+
+        (lhs, rhs)
     }
 
-    pub fn sub(&self) -> Option<(&Expr, &Expr)> {
-        if let Expr::Sub(lhs, rhs) = self {
-            Some((lhs, rhs))
-        } else {
-            None
-        }
+    pub fn sub(&self) -> (&Expr, &Expr) {
+        let Expr::Sub(lhs, rhs) = self else {
+            panic!("not a subtraction");
+        };
+
+        (lhs, rhs)
     }
 
-    pub fn mul(&self) -> Option<(&Expr, &Expr)> {
-        if let Expr::Mul(lhs, rhs) = self {
-            Some((lhs, rhs))
-        } else {
-            None
-        }
+    pub fn mul(&self) -> (&Expr, &Expr) {
+        let Expr::Mul(lhs, rhs) = self else {
+            panic!("not a multiplication");
+        };
+
+        (lhs, rhs)
     }
 
-    pub fn div(&self) -> Option<(&Expr, &Expr)> {
-        if let Expr::Div(lhs, rhs) = self {
-            Some((lhs, rhs))
-        } else {
-            None
-        }
+    pub fn div(&self) -> (&Expr, &Expr) {
+        let Expr::Div(lhs, rhs) = self else {
+            panic!("not a division");
+        };
+
+        (lhs, rhs)
     }
 
-    pub fn pow(&self) -> Option<(&Expr, &Expr)> {
-        if let Expr::Pow(base, exponent) = self {
-            Some((base, exponent))
-        } else {
-            None
-        }
+    pub fn pow(&self) -> (&Expr, &Expr) {
+        let Expr::Pow(base, exponent) = self else {
+            panic!("not an exponent")
+        };
+
+        (base, exponent)
     }
 
-    pub fn neg(&self) -> Option<&Expr> {
-        if let Expr::Neg(expr) = self {
-            Some(expr)
-        } else {
-            None
-        }
+    pub fn neg(&self) -> &Expr {
+        let Expr::Neg(expr) = self else {
+            panic!("not a negation");
+        };
+
+        expr
     }
 }

@@ -1,3 +1,4 @@
+mod ir;
 mod parse;
 
 fn main() {
