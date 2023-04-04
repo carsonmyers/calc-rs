@@ -6,6 +6,8 @@ use rust_decimal::Decimal;
 
 use crate::translate::ast::*;
 use crate::translate::error::Error;
+use crate::translate::token::*;
+use crate::translate::tokenizer::Tokens;
 
 /// Parse a calculator statement or expression
 ///
@@ -31,24 +33,40 @@ use crate::translate::error::Error;
 ///     | '-'? '(' expr ')'
 ///     | '-'? NUMBER
 /// ```
-pub struct Parser<'a> {
-    input: Peekable<Chars<'a>>,
+pub struct Parser {
+    input: Peekable<Tokens>,
 }
 
-impl<'a> Parser<'a> {
-    pub fn new(input: &'a str) -> Self {
+impl Parser {
+    pub fn new(input: Tokens) -> Self {
         Self {
-            input: input.chars().peekable(),
+            input: input.peekable(),
         }
     }
 
     pub fn parse(&mut self) -> Result<Option<Expr>> {
         let res = self.parse_expr()?;
 
-        if let Some(c) = self.input.next() {
-            Err(Error::UnexpectedChar(c).into())
-        } else {
-            Ok(res)
+        match self.input.next() {
+            Some(Ok(t)) => Err(Error::UnexpectedToken(t).into()),
+            Some(Err(err)) => Err(err),
+            None => Ok(res),
+        }
+    }
+
+    pub fn next(&mut self) -> Result<Option<Token>> {
+        match self.input.next() {
+            Some(Ok(t)) => Ok(Some(t)),
+            Some(Err(err)) => Err(err),
+            None => Ok(None),
+        }
+    }
+
+    pub fn peek_kind(&mut self) -> Result<Option<TokenKind>> {
+        match self.input.peek() {
+            Some(Ok(t)) => Ok(Some(t.kind)),
+            Some(Err(err)) => Err(*err),
+            None => Ok(None),
         }
     }
 
@@ -63,17 +81,15 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_add_sub(&mut self, lhs: Expr) -> Result<Option<Expr>> {
-        self.skip_whitespace();
-
-        let res = match self.input.peek() {
-            Some('+') => {
+        let res = match self.peek_kind()? {
+            Some(TokenKind::Plus) => {
                 self.input.next();
                 let rhs = self.parse_term()?.ok_or_else(|| self.input_error())?;
                 let lhs = Expr::Add(Box::new(lhs), Box::new(rhs));
 
                 self.parse_add_sub(lhs)?.unwrap()
             }
-            Some('-') => {
+            Some(TokenKind::Minus) => {
                 self.input.next();
                 let rhs = self.parse_term()?.ok_or_else(|| self.input_error())?;
                 let lhs = Expr::Sub(Box::new(lhs), Box::new(rhs));
@@ -97,17 +113,15 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_mul_div(&mut self, lhs: Expr) -> Result<Option<Expr>> {
-        self.skip_whitespace();
-
-        let res = match self.input.peek() {
-            Some('*') => {
+        let res = match self.peek_kind()? {
+            Some(TokenKind::Star) => {
                 self.input.next();
                 let rhs = self.parse_factor()?.ok_or_else(|| self.input_error())?;
                 let lhs = Expr::Mul(Box::new(lhs), Box::new(rhs));
 
                 self.parse_mul_div(lhs)?.unwrap()
             }
-            Some('/') => {
+            Some(TokenKind::Slash) => {
                 self.input.next();
                 let rhs = self.parse_factor()?.ok_or_else(|| self.input_error())?;
                 let lhs = Expr::Div(Box::new(lhs), Box::new(rhs));
@@ -131,10 +145,8 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_power(&mut self, lhs: Expr) -> Result<Option<Expr>> {
-        self.skip_whitespace();
-
-        let res = match self.input.peek() {
-            Some('^') => {
+        let res = match self.peek_kind()? {
+            Some(TokenKind::StarStar) => {
                 self.input.next();
 
                 let rhs = self.parse_exponent()?.ok_or_else(|| self.input_error())?;
@@ -149,225 +161,38 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_exponent(&mut self) -> Result<Option<Expr>> {
-        self.skip_whitespace();
-
-        match self.input.peek() {
-            Some('-') => {
+        match self.peek_kind()? {
+            Some(TokenKind::Minus) => {
                 self.input.next();
                 let expr = self.parse_exponent()?.ok_or_else(|| self.input_error())?;
 
                 Ok(Some(Expr::Neg(Box::new(expr))))
             }
-            Some('(') => {
+            Some(TokenKind::OpenParen) => {
                 self.input.next();
                 let expr = self.parse_expr()?.ok_or_else(|| self.input_error())?;
 
-                let Some(c) = self.input.next() else {
+                let Some(c) = self.next()? else {
                     return Err(Error::UnexpectedEOF.into());
                 };
 
-                if c != ')' {
-                    return Err(Error::UnexpectedChar(c).into());
+                if c.kind != TokenKind::CloseParen {
+                    return Err(Error::UnexpectedToken(c).into());
                 }
 
                 Ok(Some(expr))
             }
-            Some(c) if c.is_numeric() => self.parse_number(),
+            Some(TokenKind::Number(number)) => Ok(Some(Expr::Number(number))),
             _ => Ok(None),
-        }
-    }
-
-    fn parse_number(&mut self) -> Result<Option<Expr>> {
-        match self.input.peek() {
-            Some('0') => {
-                self.input.next();
-                match self.input.peek() {
-                    Some('x') => {
-                        self.input.next();
-                        self.parse_hex_number()
-                    }
-                    Some('o') => {
-                        self.input.next();
-                        self.parse_octal_number()
-                    }
-                    Some('b') => {
-                        self.input.next();
-                        self.parse_binary_number()
-                    }
-                    Some(c) if c.is_numeric() => self.parse_octal_number(),
-                    _ => Ok(Some(Expr::Number(Decimal::ZERO))),
-                }
-            }
-            _ => self.parse_decimal_number(),
-        }
-    }
-
-    // parse a number in decimal format, e.g. `12`, `5.5`, `4.01e-8`
-    fn parse_decimal_number(&mut self) -> Result<Option<Expr>> {
-        // integer part of the number `[12].34e-12`
-        let int_part = self
-            .read_numeric_string(10)
-            .expect("number starts with number");
-
-        // decimal part of the number `12[.34]e-12`
-        let dec_part = match self.input.peek() {
-            Some('.') => {
-                self.input.next();
-                self.read_numeric_string(10)
-            }
-            _ => None,
-        };
-
-        // exponent part of the number `12.34[e-12]`
-        let exp_part = match self.input.peek() {
-            Some('e') | Some('E') => {
-                self.input.next();
-                let neg = match self.input.peek() {
-                    Some('-') => {
-                        self.input.next();
-                        true
-                    }
-                    _ => false,
-                };
-
-                self.read_numeric_string(10)
-                    .map(|input| i32::from_str_radix(&input, 10).unwrap())
-                    .map(|num| if neg { num * -1 } else { num })
-            }
-            _ => None,
-        };
-
-        // get the number of decimals from the parsed number; important for calculating the scale
-        // of the Decimal type later
-        let decimal_places = dec_part.as_ref().map(|dec| dec.len() as i32).unwrap_or(0);
-
-        // all of the parsed numerical data (excluding the exponent)
-        let mut number_part = if let Some(dec_part) = dec_part {
-            int_part + &dec_part
-        } else {
-            int_part
-        };
-
-        // "scale" is the number of decimal places into the numerical part of the number. `1234`
-        // with a scale of 2 is `12.34`. Going the other way, the scale is a combination of the
-        // number of decimal places plus the inverse of the exponent part:
-        //
-        // * `12.34e-1` = `1.234`: 2 + 1 (scale): `1234` scale 3
-        // * `12.34e1` = `123.4`: 2 - 1 (scale): `1234` scale 1
-        let mut scale = exp_part
-            .map(|exp| decimal_places + exp * -1)
-            .unwrap_or(decimal_places);
-
-        // scale must be a positive number, so the number part can be padded with zeroes
-        // to correctly align the decimal point:
-        //
-        // * `12.34e4` has a scale of -2 (2 decimal places minus 4 exponent). It will be changed
-        //   to `123400` with a scale of 0
-        if scale < 0 {
-            for _ in 0..(scale * -1) {
-                number_part.push('0');
-            }
-
-            scale = 0;
-        }
-
-        let value = i128::from_str_radix(&number_part, 10).unwrap();
-        Ok(Some(Expr::Number(Decimal::try_from_i128_with_scale(
-            value,
-            scale as u32,
-        )?)))
-    }
-
-    fn parse_hex_number(&mut self) -> Result<Option<Expr>> {
-        let Some(number) = self.read_numeric_string(16) else {
-            return match self.input.next() {
-                Some(c) => Err(Error::UnexpectedChar(c).into()),
-                None => Err(Error::UnexpectedEOF.into()),
-            };
-        };
-
-        let value = Decimal::from_str_radix(&number, 16)?;
-        Ok(Some(Expr::Number(value)))
-    }
-
-    fn parse_octal_number(&mut self) -> Result<Option<Expr>> {
-        let Some(number) = self.read_numeric_string(8) else {
-            return match self.input.next() {
-                Some(c) => Err(Error::UnexpectedChar(c).into()),
-                None => Err(Error::UnexpectedEOF.into()),
-            };
-        };
-
-        let value = Decimal::from_str_radix(&number, 8)?;
-        Ok(Some(Expr::Number(value)))
-    }
-
-    fn parse_binary_number(&mut self) -> Result<Option<Expr>> {
-        let Some(number) = self.read_numeric_string(2) else {
-            return match self.input.next() {
-                Some(c) => Err(Error::UnexpectedChar(c).into()),
-                None => Err(Error::UnexpectedEOF.into()),
-            };
-        };
-
-        let value = Decimal::from_str_radix(&number, 2)?;
-        Ok(Some(Expr::Number(value)))
-    }
-
-    const LOWER_DIGITS: [char; 16] = [
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
-    ];
-    const UPPER_DIGITS: [char; 16] = [
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
-    ];
-    fn read_numeric_string(&mut self, radix: u32) -> Option<String> {
-        assert!(radix == 2 || radix == 8 || radix == 10 || radix == 16);
-        let mut chars = Vec::new();
-
-        let lower_digits = &Parser::LOWER_DIGITS[0..radix as usize];
-        let upper_digits = &Parser::UPPER_DIGITS[0..radix as usize];
-
-        loop {
-            match self.input.peek() {
-                Some('_') => (),
-                Some(c) if c.is_numeric() && lower_digits.contains(c) => {
-                    chars.push(*c);
-                }
-                Some(c) if c.is_lowercase() && lower_digits.contains(c) => {
-                    chars.push(*c);
-                }
-                Some(c) if c.is_uppercase() && upper_digits.contains(c) => {
-                    chars.push(*c);
-                }
-                _ => break,
-            }
-
-            self.input.next();
-        }
-
-        if chars.len() == 0 {
-            None
-        } else {
-            Some(chars.into_iter().collect())
-        }
-    }
-
-    fn skip_whitespace(&mut self) {
-        while let Some(c) = self.input.peek() {
-            if c.is_whitespace() {
-                self.input.next();
-            } else {
-                break;
-            }
         }
     }
 
     fn input_error(&mut self) -> eyre::Report {
         match self.input.next() {
-            Some(c) => Error::UnexpectedChar(c),
-            None => Error::UnexpectedEOF,
+            Some(Ok(t)) => Error::UnexpectedToken(t).into(),
+            Some(Err(err)) => err,
+            None => Error::UnexpectedEOF.into(),
         }
-        .into()
     }
 }
 
@@ -379,7 +204,22 @@ mod tests {
 
     #[test]
     fn parse() {
-        let mut p = Parser::new("12.0 + -4e2 * 3^6E-4 / 5.45 - -2");
+        let tok = tokens(vec![
+            TokenKind::Number(dec!(12.0)),
+            TokenKind::Plus,
+            TokenKind::Minus,
+            TokenKind::Number(dec!(400)),
+            TokenKind::Star,
+            TokenKind::Number(dec!(3)),
+            TokenKind::StarStar,
+            TokenKind::Number(dec!(0.0006)),
+            TokenKind::Slash,
+            TokenKind::Number(dec!(5.45)),
+            TokenKind::Minus,
+            TokenKind::Minus,
+            TokenKind::Number(dec!(2)),
+        ]);
+        let mut p = Parser::new(tok);
         let expr = get_expr(p.parse());
         let (lhs, rhs) = expr.sub();
         assert_eq!(*rhs.neg().number(), dec!(2));
@@ -393,14 +233,41 @@ mod tests {
         assert_eq!(*base.number(), dec!(3));
         assert_eq!(*exponent.number(), dec!(0.0006));
 
-        let mut p = Parser::new("12 - 4 6 + 3");
+        let tok = tokens(vec![
+            TokenKind::Number(dec!(12)),
+            TokenKind::Minus,
+            TokenKind::Number(dec!(4)),
+            TokenKind::Number(dec!(6)),
+            TokenKind::Plus,
+            TokenKind::Number(dec!(3)),
+        ]);
+        let mut p = Parser::new(tok);
         let err = get_err(p.parse());
         assert!(matches!(err, Error::UnexpectedChar('6')));
     }
 
     #[test]
     fn expr() {
-        let mut p = Parser::new("1+2+3 2/3+4-5*6 abc");
+        let tok = tokens(vec![
+            TokenKind::Number(dec!(1)),
+            TokenKind::Plus,
+            TokenKind::Number(dec!(2)),
+            TokenKind::Plus,
+            TokenKind::Number(dec!(3)),
+            // ---
+            TokenKind::Number(dec!(2)),
+            TokenKind::Slash,
+            TokenKind::Number(dec!(3)),
+            TokenKind::Plus,
+            TokenKind::Number(dec!(4)),
+            TokenKind::Minus,
+            TokenKind::Number(dec!(5)),
+            TokenKind::Star,
+            TokenKind::Number(dec!(6)),
+            // ---
+            TokenKind::Caret,
+        ]);
+        let mut p = Parser::new(tok);
 
         let expr = get_expr(p.parse_expr());
         let (lhs, rhs) = expr.add();
@@ -428,7 +295,17 @@ mod tests {
 
     #[test]
     fn add_sub() {
-        let mut p = Parser::new("+2-(3+4)");
+        let tok = tokens(vec![
+            TokenKind::Plus,
+            TokenKind::Number(dec!(2)),
+            TokenKind::Minus,
+            TokenKind::OpenParen,
+            TokenKind::Number(dec!(3)),
+            TokenKind::Plus,
+            TokenKind::Number(dec!(4)),
+            TokenKind::CloseParen,
+        ]);
+        let mut p = Parser::new(tok);
 
         let expr = get_expr(p.parse_add_sub(Expr::Number(dec!(1))));
         let (lhs, rhs) = expr.sub();
@@ -443,26 +320,58 @@ mod tests {
             assert_eq!(*rhs.number(), dec!(2));
         }
 
-        let mut p = Parser::new("+a");
+        let mut p = Parser::new(tokens(vec![TokenKind::Plus, TokenKind::Caret]));
         let err = get_err(p.parse_add_sub(Expr::Number(dec!(2))));
-        assert!(matches!(err, Error::UnexpectedChar('a')));
+        assert!(matches!(
+            err,
+            Error::UnexpectedToken(Token {
+                kind: TokenKind::Caret,
+                ..
+            })
+        ));
 
-        let mut p = Parser::new("+");
+        let mut p = Parser::new(tokens(vec![TokenKind::Plus]));
         let err = get_err(p.parse_add_sub(Expr::Number(dec!(2))));
         assert!(matches!(err, Error::UnexpectedEOF));
 
-        let mut p = Parser::new("-b");
+        let mut p = Parser::new(tokens(vec![TokenKind::Minus, TokenKind::Caret]));
         let err = get_err(p.parse_add_sub(Expr::Number(dec!(1))));
-        assert!(matches!(err, Error::UnexpectedChar('b')));
+        assert!(matches!(
+            err,
+            Error::UnexpectedToken(Token {
+                kind: TokenKind::Caret,
+                ..
+            })
+        ));
 
-        let mut p = Parser::new("-");
+        let mut p = Parser::new(tokens(vec![TokenKind::Minus]));
         let err = get_err(p.parse_add_sub(Expr::Number(dec!(3))));
         assert!(matches!(err, Error::UnexpectedEOF));
     }
 
     #[test]
     fn term() {
-        let mut p = Parser::new("3/4*2 -2*(4*3)^6.1 abc");
+        let tok = tokens(vec![
+            TokenKind::Number(dec!(3)),
+            TokenKind::Slash,
+            TokenKind::Number(dec!(4)),
+            TokenKind::Star,
+            TokenKind::Number(dec!(2)),
+            // ---
+            TokenKind::Minus,
+            TokenKind::Number(dec!(2)),
+            TokenKind::Star,
+            TokenKind::OpenParen,
+            TokenKind::Number(dec!(4)),
+            TokenKind::Star,
+            TokenKind::Number(dec!(3)),
+            TokenKind::CloseParen,
+            TokenKind::StarStar,
+            TokenKind::Number(dec!(6.1)),
+            // ---
+            TokenKind::Caret,
+        ]);
+        let mut p = Parser::new(tok);
 
         let expr = get_expr(p.parse_term());
         let (lhs, rhs) = expr.mul();
@@ -486,7 +395,17 @@ mod tests {
 
     #[test]
     fn mul_div() {
-        let mut p = Parser::new("*3.2E-2/4^-2*5");
+        let tok = tokens(vec![
+            TokenKind::Star,
+            TokenKind::Number(dec!(0.032)),
+            TokenKind::Slash,
+            TokenKind::Number(dec!(4)),
+            TokenKind::StarStar,
+            TokenKind::Number(dec!(2)),
+            TokenKind::Star,
+            TokenKind::Number(dec!(5)),
+        ]);
+        let mut p = Parser::new(tok);
         let expr = get_expr(p.parse_mul_div(Expr::Number(dec!(2))));
 
         let (lhs, rhs) = expr.mul();
@@ -500,26 +419,57 @@ mod tests {
         assert_eq!(*lhs.number(), dec!(2));
         assert_eq!(*rhs.number(), dec!(0.032));
 
-        let mut p = Parser::new("*)");
+        let mut p = Parser::new(tokens(vec![TokenKind::Star, TokenKind::CloseParen]));
         let err = get_err(p.parse_mul_div(Expr::Number(dec!(2))));
-        assert!(matches!(err, Error::UnexpectedChar(')')));
+        assert!(matches!(
+            err,
+            Error::UnexpectedToken(Token {
+                kind: TokenKind::CloseParen,
+                ..
+            })
+        ));
 
-        let mut p = Parser::new("*");
+        let mut p = Parser::new(tokens(vec![TokenKind::Star]));
         let err = get_err(p.parse_mul_div(Expr::Number(dec!(99))));
         assert!(matches!(err, Error::UnexpectedEOF));
 
-        let mut p = Parser::new("/^");
+        let mut p = Parser::new(tokens(vec![TokenKind::Slash, TokenKind::Caret]));
         let err = get_err(p.parse_mul_div(Expr::Number(dec!(2))));
-        assert!(matches!(err, Error::UnexpectedChar('^')));
+        assert!(matches!(
+            err,
+            Error::UnexpectedToken(Token {
+                kind: TokenKind::Caret,
+                ..
+            })
+        ));
 
-        let mut p = Parser::new("/");
+        let mut p = Parser::new(tokens(vec![TokenKind::Slash]));
         let err = get_err(p.parse_mul_div(Expr::Number(dec!(2))));
         assert!(matches!(err, Error::UnexpectedEOF));
     }
 
     #[test]
     fn factor() {
-        let mut p = Parser::new("2 3.1e-2^4 -(2^-4.1)^3.14 *");
+        let tok = tokens(vec![
+            TokenKind::Number(dec!(2)),
+            // ---
+            TokenKind::Number(dec!(0.031)),
+            TokenKind::StarStar,
+            TokenKind::Number(dec!(4)),
+            // ---
+            TokenKind::Minus,
+            TokenKind::OpenParen,
+            TokenKind::Number(dec!(2)),
+            TokenKind::StarStar,
+            TokenKind::Minus,
+            TokenKind::Number(dec!(4.1)),
+            TokenKind::CloseParen,
+            TokenKind::StarStar,
+            TokenKind::Number(dec!(3.14)),
+            // ---
+            TokenKind::Star,
+        ]);
+        let mut p = Parser::new(tok);
 
         let expr = get_expr(p.parse_factor());
         assert_eq!(*expr.number(), dec!(2));
@@ -542,7 +492,13 @@ mod tests {
 
     #[test]
     fn power() {
-        let mut p = Parser::new("^3^4");
+        let tok = tokens(vec![
+            TokenKind::StarStar,
+            TokenKind::Number(dec!(3)),
+            TokenKind::StarStar,
+            TokenKind::Number(dec!(4)),
+        ]);
+        let mut p = Parser::new(tok);
         let expr = get_expr(p.parse_power(Expr::Number(dec!(2))));
         let (base, exponent) = expr.pow();
         assert_eq!(*base.number(), dec!(2));
@@ -550,18 +506,45 @@ mod tests {
         assert_eq!(*base.number(), dec!(3));
         assert_eq!(*exponent.number(), dec!(4));
 
-        let mut p = Parser::new("^$");
+        let mut p = Parser::new(tokens(vec![TokenKind::StarStar, TokenKind::Caret]));
         let err = get_err(p.parse_power(Expr::Number(dec!(2))));
-        assert!(matches!(err, Error::UnexpectedChar('$')));
+        assert!(matches!(
+            err,
+            Error::UnexpectedToken(Token {
+                kind: TokenKind::Caret,
+                ..
+            })
+        ));
 
-        let mut p = Parser::new("^");
+        let mut p = Parser::new(tokens(vec![TokenKind::StarStar]));
         let err = get_err(p.parse_power(Expr::Number(dec!(2))));
         assert!(matches!(err, Error::UnexpectedEOF));
     }
 
     #[test]
     fn exponent() {
-        let mut p = Parser::new("-4 (1) -(-1.1) () (#)");
+        let tok = tokens(vec![
+            TokenKind::Minus,
+            TokenKind::Number(dec!(4)),
+            // ---
+            TokenKind::OpenParen,
+            TokenKind::Number(dec!(1)),
+            TokenKind::CloseParen,
+            // ---
+            TokenKind::Minus,
+            TokenKind::OpenParen,
+            TokenKind::Minus,
+            TokenKind::Number(dec!(1.1)),
+            TokenKind::CloseParen,
+            // ---
+            TokenKind::OpenParen,
+            TokenKind::CloseParen,
+            // ---
+            TokenKind::OpenParen,
+            TokenKind::Star,
+            TokenKind::CloseParen,
+        ]);
+        let mut p = Parser::new(tok);
         let expr = get_expr(p.parse_exponent());
         assert_eq!(*expr.neg().number(), dec!(4));
         let expr = get_expr(p.parse_exponent());
@@ -569,93 +552,21 @@ mod tests {
         let expr = get_expr(p.parse_exponent());
         assert_eq!(*expr.neg().neg().number(), dec!(1.1));
         let err = get_err(p.parse_exponent());
-        assert!(matches!(err, Error::UnexpectedChar(')')));
+        assert!(matches!(
+            err,
+            Error::UnexpectedToken(Token {
+                kind: TokenKind::CloseParen,
+                ..
+            })
+        ));
         let err = get_err(p.parse_exponent());
-        assert!(matches!(err, Error::UnexpectedChar('#')));
-    }
-
-    #[test]
-    fn number() {
-        let mut p = Parser::new("12.34 0x1a 0b11 0o11 011 11 0");
-
-        let expr = get_expr(p.parse_number());
-        assert_eq!(*expr.number(), dec!(12.34));
-
-        p.input.next();
-        let expr = get_expr(p.parse_number());
-        assert_eq!(*expr.number(), dec!(26));
-
-        p.input.next();
-        let expr = get_expr(p.parse_number());
-        assert_eq!(*expr.number(), dec!(3));
-
-        p.input.next();
-        let expr = get_expr(p.parse_number());
-        assert_eq!(*expr.number(), dec!(9));
-
-        p.input.next();
-        let expr = get_expr(p.parse_number());
-        assert_eq!(*expr.number(), dec!(9));
-
-        p.input.next();
-        let expr = get_expr(p.parse_number());
-        assert_eq!(*expr.number(), dec!(11));
-
-        p.input.next();
-        let expr = get_expr(p.parse_number());
-        assert_eq!(*expr.number(), dec!(0));
-    }
-
-    #[test]
-    fn decimal_number() {
-        let mut p = Parser::new("12.34e-1 12.34e1 12.34e4 12. 0.34 1e-2");
-
-        let expr = get_expr(p.parse_decimal_number());
-        assert_eq!(*expr.number(), dec!(1.234));
-
-        p.input.next();
-        let expr = get_expr(p.parse_decimal_number());
-        assert_eq!(*expr.number(), dec!(123.4));
-
-        p.input.next();
-        let expr = get_expr(p.parse_decimal_number());
-        assert_eq!(*expr.number(), dec!(123400));
-
-        p.input.next();
-        let expr = get_expr(p.parse_decimal_number());
-        assert_eq!(*expr.number(), dec!(12));
-
-        p.input.next();
-        let expr = get_expr(p.parse_decimal_number());
-        assert_eq!(*expr.number(), dec!(0.34));
-
-        p.input.next();
-        let expr = get_expr(p.parse_decimal_number());
-        assert_eq!(*expr.number(), dec!(0.01));
-    }
-
-    #[test]
-    fn hex_number() {
-        // parser should read "FF_ab_01_" and produce number 0xFFAB01 (16755457 dec)
-        let mut p = Parser::new("FF_ab_01_xyz");
-        let expr = get_expr(p.parse_hex_number());
-        assert_eq!(*expr.number(), dec!(16_755_457))
-    }
-
-    #[test]
-    fn octal_number() {
-        // parser should read "6_17" and produce number 0617 (399 dec)
-        let mut p = Parser::new("6_179");
-        let expr = get_expr(p.parse_octal_number());
-        assert_eq!(*expr.number(), dec!(399));
-    }
-
-    #[test]
-    fn binary_number() {
-        // parser should read "11_01" and produce number 0b1101 (13 dec)
-        let mut p = Parser::new("11_012");
-        let expr = get_expr(p.parse_binary_number());
-        assert_eq!(*expr.number(), dec!(13));
+        assert!(matches!(
+            err,
+            Error::UnexpectedToken(Token {
+                kind: TokenKind::Star,
+                ..
+            })
+        ));
     }
 
     fn get_expr(res: Result<Option<Expr>>) -> Expr {
@@ -678,5 +589,16 @@ mod tests {
             Ok(err) => err,
             Err(err) => panic!("not a parser error: {:?}", err),
         }
+    }
+
+    fn tokens(kinds: Vec<TokenKind>) -> Tokens {
+        kinds
+            .into_iter()
+            .map(|kind| Token {
+                span: Default::default(),
+                kind,
+            })
+            .collect::<Vec<_>>()
+            .into()
     }
 }

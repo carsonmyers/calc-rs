@@ -1,3 +1,4 @@
+mod input;
 mod run;
 mod translate;
 
