@@ -9,6 +9,10 @@ pub enum Expr {
     Div(Box<Expr>, Box<Expr>),
     Pow(Box<Expr>, Box<Expr>),
     Neg(Box<Expr>),
+    BitAnd(Box<Expr>, Box<Expr>),
+    BitOr(Box<Expr>, Box<Expr>),
+    BitXor(Box<Expr>, Box<Expr>),
+    BitNot(Box<Expr>),
 }
 
 impl Expr {

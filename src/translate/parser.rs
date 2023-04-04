@@ -25,7 +25,7 @@ use crate::translate::error::Error;
 /// factor ->
 ///     | exponent power?
 /// power ->
-///     | '^' exponent power?
+///     | '**' exponent power?
 ///     | \e
 /// exponent ->
 ///     | '-'? '(' expr ')'
