@@ -33,12 +33,12 @@ use crate::translate::tokenizer::Tokens;
 ///     | '-'? '(' expr ')'
 ///     | '-'? NUMBER
 /// ```
-pub struct Parser {
-    input: Peekable<Tokens>,
+pub struct Parser<'a> {
+    input: Peekable<Tokens<'a>>,
 }
 
-impl Parser {
-    pub fn new(input: Tokens) -> Self {
+impl<'a> Parser<'a> {
+    pub fn new(input: Tokens<'a>) -> Self {
         Self {
             input: input.peekable(),
         }
@@ -62,11 +62,14 @@ impl Parser {
         }
     }
 
-    pub fn peek_kind(&mut self) -> Result<Option<TokenKind>> {
+    pub fn peek_kind(&mut self) -> Result<Option<&TokenKind>> {
         match self.input.peek() {
-            Some(Ok(t)) => Ok(Some(t.kind)),
-            Some(Err(err)) => Err(*err),
-            None => Ok(None),
+            Some(Ok(t)) => Ok(Some(&t.kind)),
+
+            // matching an error here, like in `next`, gives an &Report which does
+            // not implement `Clone` so can't really be reported here; it will be
+            // reported when `next` is called
+            _ => Ok(None),
         }
     }
 
@@ -163,13 +166,13 @@ impl Parser {
     fn parse_exponent(&mut self) -> Result<Option<Expr>> {
         match self.peek_kind()? {
             Some(TokenKind::Minus) => {
-                self.input.next();
+                self.next()?;
                 let expr = self.parse_exponent()?.ok_or_else(|| self.input_error())?;
 
                 Ok(Some(Expr::Neg(Box::new(expr))))
             }
             Some(TokenKind::OpenParen) => {
-                self.input.next();
+                self.next()?;
                 let expr = self.parse_expr()?.ok_or_else(|| self.input_error())?;
 
                 let Some(c) = self.next()? else {
@@ -182,7 +185,12 @@ impl Parser {
 
                 Ok(Some(expr))
             }
-            Some(TokenKind::Number(number)) => Ok(Some(Expr::Number(number))),
+            Some(TokenKind::Number(number)) => {
+                let expr = Expr::Number(*number);
+                self.next()?;
+
+                Ok(Some(expr))
+            }
             _ => Ok(None),
         }
     }
@@ -243,7 +251,13 @@ mod tests {
         ]);
         let mut p = Parser::new(tok);
         let err = get_err(p.parse());
-        assert!(matches!(err, Error::UnexpectedChar('6')));
+        assert!(matches!(
+            err,
+            Error::UnexpectedToken(Token {
+                kind: TokenKind::Number(_),
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -401,6 +415,7 @@ mod tests {
             TokenKind::Slash,
             TokenKind::Number(dec!(4)),
             TokenKind::StarStar,
+            TokenKind::Minus,
             TokenKind::Number(dec!(2)),
             TokenKind::Star,
             TokenKind::Number(dec!(5)),
@@ -591,7 +606,7 @@ mod tests {
         }
     }
 
-    fn tokens(kinds: Vec<TokenKind>) -> Tokens {
+    fn tokens(kinds: Vec<TokenKind>) -> Tokens<'static> {
         kinds
             .into_iter()
             .map(|kind| Token {

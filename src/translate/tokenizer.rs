@@ -252,11 +252,11 @@ impl<'a> Tokenizer<'a> {
     }
 }
 
-pub struct Tokens {
-    token_iter: Box<dyn Iterator<Item = Result<Token>>>,
+pub struct Tokens<'a> {
+    token_iter: Box<dyn Iterator<Item = Result<Token>> + 'a>,
 }
 
-impl<'a> From<Tokenizer<'a>> for Tokens {
+impl<'a> From<Tokenizer<'a>> for Tokens<'a> {
     fn from(value: Tokenizer<'a>) -> Self {
         Self {
             token_iter: Box::new(value),
@@ -264,7 +264,7 @@ impl<'a> From<Tokenizer<'a>> for Tokens {
     }
 }
 
-impl From<Vec<Token>> for Tokens {
+impl From<Vec<Token>> for Tokens<'_> {
     fn from(value: Vec<Token>) -> Self {
         Self {
             token_iter: Box::new(value.into_iter().map(|tok| Ok(tok))),
@@ -272,7 +272,7 @@ impl From<Vec<Token>> for Tokens {
     }
 }
 
-impl Iterator for Tokens {
+impl Iterator for Tokens<'_> {
     type Item = Result<Token>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -300,7 +300,8 @@ mod tests {
 
     #[test]
     fn number() {
-        let mut p = Tokenizer::new(&mut Input::new("12.34 0x1a 0b11 0o11 011 11 0"));
+        let mut input = Input::new("12.34 0x1a 0b11 0o11 011 11 0");
+        let mut p = Tokenizer::new(&mut input);
 
         let tok = get_tok(p.parse_number());
         assert_eq!(*tok.number(), dec!(12.34));
@@ -362,7 +363,8 @@ mod tests {
     #[test]
     fn hex_number() {
         // parser should read "FF_ab_01_" and produce number 0xFFAB01 (16755457 dec)
-        let mut t = Tokenizer::new(&mut Input::new("FF_ab_01_xyz"));
+        let mut input = Input::new("FF_ab_01_xyz");
+        let mut t = Tokenizer::new(&mut input);
         let tok = get_tok(t.parse_hex_number());
         assert_eq!(*tok.number(), dec!(16_755_457))
     }
@@ -370,7 +372,8 @@ mod tests {
     #[test]
     fn octal_number() {
         // parser should read "6_17" and produce number 0617 (399 dec)
-        let mut t = Tokenizer::new(&mut Input::new("6_179"));
+        let mut input = Input::new("6_179");
+        let mut t = Tokenizer::new(&mut input);
         let tok = get_tok(t.parse_octal_number());
         assert_eq!(*tok.number(), dec!(399));
     }
@@ -378,7 +381,8 @@ mod tests {
     #[test]
     fn binary_number() {
         // parser should read "11_01" and produce number 0b1101 (13 dec)
-        let mut t = Tokenizer::new(&mut Input::new("11_012"));
+        let mut input = Input::new("11_012");
+        let mut t = Tokenizer::new(&mut input);
         let tok = get_tok(t.parse_binary_number());
         assert_eq!(*tok.number(), dec!(13));
     }

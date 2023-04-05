@@ -56,6 +56,7 @@ impl ToIr for Expr {
                 inst.push(Instruction::Neg);
                 inst
             }
+            _ => todo!(),
         }
     }
 }
