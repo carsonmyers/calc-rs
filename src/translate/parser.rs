@@ -29,6 +29,7 @@ use crate::translate::tokenizer::Tokens;
 /// mul_div ->
 ///     | '*' factor mul_div?
 ///     | '/' factor mul_div?
+///     | '%' factor mul_div?
 ///     | \e
 /// exponent ->
 ///     | '-' unit
@@ -176,6 +177,13 @@ impl<'a> Parser<'a> {
                 self.input.next();
                 let rhs = self.parse_factor()?.ok_or_else(|| self.input_error())?;
                 let lhs = Expr::Div(Box::new(lhs), Box::new(rhs));
+
+                self.parse_mul_div(lhs)?.unwrap()
+            }
+            Some(TokenKind::Percent) => {
+                self.input.next();
+                let rhs = self.parse_factor()?.ok_or_else(|| self.input_error())?;
+                let lhs = Expr::Rem(Box::new(lhs), Box::new(rhs));
 
                 self.parse_mul_div(lhs)?.unwrap()
             }
@@ -510,6 +518,12 @@ mod tests {
             TokenKind::StarStar,
             TokenKind::Number(dec!(6.1)),
             // ---
+            TokenKind::Number(dec!(4)),
+            TokenKind::Percent,
+            TokenKind::Number(dec!(2)),
+            TokenKind::StarStar,
+            TokenKind::Number(dec!(8)),
+            // ---
             TokenKind::Caret,
         ]);
         let mut p = Parser::new(tok);
@@ -530,6 +544,13 @@ mod tests {
         assert_eq!(*lhs.number(), dec!(4));
         assert_eq!(*rhs.number(), dec!(3));
 
+        let expr = get_expr(p.parse_term());
+        let (lhs, rhs) = expr.rem();
+        assert_eq!(*lhs.number(), dec!(4));
+        let (lhs, rhs) = rhs.pow();
+        assert_eq!(*lhs.number(), dec!(2));
+        assert_eq!(*rhs.number(), dec!(8));
+
         let res = p.parse_term();
         assert!(matches!(res, Ok(None)));
     }
@@ -546,11 +567,16 @@ mod tests {
             TokenKind::Number(dec!(2)),
             TokenKind::Star,
             TokenKind::Number(dec!(5)),
+            TokenKind::Percent,
+            TokenKind::Number(dec!(7)),
         ]);
         let mut p = Parser::new(tok);
         let expr = get_expr(p.parse_mul_div(Expr::Number(dec!(2))));
 
-        let (lhs, rhs) = expr.mul();
+        let (lhs, rhs) = expr.rem();
+        assert_eq!(*rhs.number(), dec!(7));
+
+        let (lhs, rhs) = lhs.mul();
         assert_eq!(*rhs.number(), dec!(5));
 
         let (lhs, rhs) = lhs.div();

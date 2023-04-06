@@ -7,6 +7,7 @@ pub enum Expr {
     Sub(Box<Expr>, Box<Expr>),
     Mul(Box<Expr>, Box<Expr>),
     Div(Box<Expr>, Box<Expr>),
+    Rem(Box<Expr>, Box<Expr>),
     Pow(Box<Expr>, Box<Expr>),
     Neg(Box<Expr>),
     BitAnd(Box<Expr>, Box<Expr>),
@@ -52,6 +53,14 @@ impl Expr {
     pub fn div(&self) -> (&Expr, &Expr) {
         let Expr::Div(lhs, rhs) = self else {
             panic!("not a division");
+        };
+
+        (lhs, rhs)
+    }
+
+    pub fn rem(&self) -> (&Expr, &Expr) {
+        let Expr::Rem(lhs, rhs) = self else {
+            panic!("not a remainder");
         };
 
         (lhs, rhs)

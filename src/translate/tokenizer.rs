@@ -28,6 +28,7 @@ impl<'a> Tokenizer<'a> {
             Some('+') => self.simple_token(TokenKind::Plus),
             Some('-') => self.simple_token(TokenKind::Minus),
             Some('/') => self.simple_token(TokenKind::Slash),
+            Some('%') => self.simple_token(TokenKind::Percent),
             Some('&') => self.simple_token(TokenKind::And),
             Some('|') => self.simple_token(TokenKind::Pipe),
             Some('^') => self.simple_token(TokenKind::Caret),
@@ -311,7 +312,7 @@ mod tests {
 
     #[test]
     fn simple_tokens() {
-        let mut input = Input::new("+-/&|^~()2**3*");
+        let mut input = Input::new("+-/%&|^~()2**3*");
         let mut t = Tokenizer::new(&mut input);
 
         let tok = get_tok(t.next_token());
@@ -320,6 +321,8 @@ mod tests {
         assert!(matches!(tok.kind, TokenKind::Minus));
         let tok = get_tok(t.next_token());
         assert!(matches!(tok.kind, TokenKind::Slash));
+        let tok = get_tok(t.next_token());
+        assert!(matches!(tok.kind, TokenKind::Percent));
         let tok = get_tok(t.next_token());
         assert!(matches!(tok.kind, TokenKind::And));
         let tok = get_tok(t.next_token());

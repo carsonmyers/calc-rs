@@ -24,7 +24,8 @@ fn input(exe: &mut run::Executor) -> Result<()> {
     let mut input = String::new();
     io::stdin().read_line(&mut input)?;
 
-    let Some(program) = translate::read_to_ir(&input)? else {
+    let input = input::Input::new(&input);
+    let Some(program) = translate::read_to_ir(input)? else {
         return Ok(())
     };
 
