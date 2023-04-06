@@ -15,6 +15,7 @@ pub enum Expr {
     BitNot(Box<Expr>),
 }
 
+#[cfg(test)]
 impl Expr {
     pub fn number(&self) -> &Decimal {
         let Expr::Number(number) = self else {
@@ -67,6 +68,38 @@ impl Expr {
     pub fn neg(&self) -> &Expr {
         let Expr::Neg(expr) = self else {
             panic!("not a negation");
+        };
+
+        expr
+    }
+
+    pub fn bit_and(&self) -> (&Expr, &Expr) {
+        let Expr::BitAnd(lhs, rhs) = self else {
+            panic!("not a bitwise and");
+        };
+
+        (lhs, rhs)
+    }
+
+    pub fn bit_or(&self) -> (&Expr, &Expr) {
+        let Expr::BitOr(lhs, rhs) = self else {
+            panic!("not a bitwise or");
+        };
+
+        (lhs, rhs)
+    }
+
+    pub fn bit_xor(&self) -> (&Expr, &Expr) {
+        let Expr::BitXor(lhs, rhs) = self else {
+            panic!("not a bitwise xor");
+        };
+
+        (lhs, rhs)
+    }
+
+    pub fn bit_not(&self) -> &Expr {
+        let Expr::BitNot(expr) = self else {
+            panic!("not a bitwise not");
         };
 
         expr

@@ -13,25 +13,31 @@ use crate::translate::tokenizer::Tokens;
 ///
 /// ```ignore
 /// expr ->
+///     | bitwise bitwise_op?
+/// bitwise ->
 ///     | term add_sub?
+/// bitwise_op ->
+///     | '&' bitwise bitwise_op?
+///     | '|' bitwise bitwise_op?
+///     | '^' bitwise bitwise_op?
+/// term ->
+///     | factor mul_div?
 /// add_sub ->
 ///     | '+' term add_sub?
 ///     | '-' term add_sub?
 ///     | \e
-/// term ->
-///     | factor mul_div?
+/// factor ->
+///     | exponent power?
 /// mul_div ->
 ///     | '*' factor mul_div?
 ///     | '/' factor mul_div?
 ///     | \e
-/// factor ->
-///     | exponent power?
-/// power ->
-///     | '**' exponent power?
-///     | \e
 /// exponent ->
 ///     | '-'? '(' expr ')'
 ///     | '-'? NUMBER
+/// power ->
+///     | '**' exponent power?
+///     | \e
 /// ```
 pub struct Parser<'a> {
     input: Peekable<Tokens<'a>>,
@@ -74,6 +80,45 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_expr(&mut self) -> Result<Option<Expr>> {
+        let bitwise = self.parse_bitwise()?;
+
+        if let Some(bitwise) = bitwise {
+            self.parse_bitwise_op(bitwise)
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn parse_bitwise_op(&mut self, lhs: Expr) -> Result<Option<Expr>> {
+        let res = match self.peek_kind()? {
+            Some(TokenKind::And) => {
+                self.next()?;
+                let rhs = self.parse_bitwise()?.ok_or_else(|| self.input_error())?;
+                let lhs = Expr::BitAnd(Box::new(lhs), Box::new(rhs));
+
+                self.parse_bitwise_op(lhs)?.unwrap()
+            }
+            Some(TokenKind::Pipe) => {
+                self.next()?;
+                let rhs = self.parse_bitwise()?.ok_or_else(|| self.input_error())?;
+                let lhs = Expr::BitOr(Box::new(lhs), Box::new(rhs));
+
+                self.parse_bitwise_op(lhs)?.unwrap()
+            }
+            Some(TokenKind::Caret) => {
+                self.next()?;
+                let rhs = self.parse_bitwise()?.ok_or_else(|| self.input_error())?;
+                let lhs = Expr::BitXor(Box::new(lhs), Box::new(rhs));
+
+                self.parse_bitwise_op(lhs)?.unwrap()
+            }
+            _ => lhs,
+        };
+
+        Ok(Some(res))
+    }
+
+    fn parse_bitwise(&mut self) -> Result<Option<Expr>> {
         let term = self.parse_term()?;
 
         if let Some(term) = term {
@@ -263,6 +308,73 @@ mod tests {
     #[test]
     fn expr() {
         let tok = tokens(vec![
+            TokenKind::Number(dec!(4)),
+            TokenKind::Pipe,
+            TokenKind::Number(dec!(5)),
+            // ---
+            TokenKind::Number(dec!(2)),
+            TokenKind::And,
+            TokenKind::Minus,
+            TokenKind::Number(dec!(7)),
+            TokenKind::Caret,
+            TokenKind::Number(dec!(10)),
+            TokenKind::Star,
+            TokenKind::Number(dec!(3)),
+            // ---
+            TokenKind::CloseParen,
+        ]);
+        let mut p = Parser::new(tok);
+
+        let expr = get_expr(p.parse_expr());
+        let (lhs, rhs) = expr.bit_or();
+        assert_eq!(*lhs.number(), dec!(4));
+        assert_eq!(*rhs.number(), dec!(5));
+
+        let expr = get_expr(p.parse_expr());
+        let (lhs, rhs) = expr.bit_xor();
+        {
+            let (lhs, rhs) = rhs.mul();
+            assert_eq!(*lhs.number(), dec!(10));
+            assert_eq!(*rhs.number(), dec!(3));
+        }
+        let (lhs, rhs) = lhs.bit_and();
+        assert_eq!(*lhs.number(), dec!(2));
+        assert_eq!(*rhs.neg().number(), dec!(7));
+
+        let res = p.parse_expr();
+        assert!(matches!(res, Ok(None)));
+    }
+
+    #[test]
+    fn bitwise_op() {
+        let tok = tokens(vec![
+            TokenKind::And,
+            TokenKind::Number(dec!(2)),
+            TokenKind::Plus,
+            TokenKind::Number(dec!(3)),
+            TokenKind::Pipe,
+            TokenKind::Number(dec!(4)),
+            TokenKind::Caret,
+            TokenKind::Minus,
+            TokenKind::Number(dec!(5)),
+        ]);
+        let mut p = Parser::new(tok);
+
+        let expr = get_expr(p.parse_bitwise_op(Expr::Number(dec!(1))));
+        let (lhs, rhs) = expr.bit_xor();
+        assert_eq!(*rhs.neg().number(), dec!(5));
+        let (lhs, rhs) = lhs.bit_or();
+        assert_eq!(*rhs.number(), dec!(4));
+        let (lhs, rhs) = lhs.bit_and();
+        assert_eq!(*lhs.number(), dec!(1));
+        let (lhs, rhs) = rhs.add();
+        assert_eq!(*lhs.number(), dec!(2));
+        assert_eq!(*rhs.number(), dec!(3));
+    }
+
+    #[test]
+    fn bitwise() {
+        let tok = tokens(vec![
             TokenKind::Number(dec!(1)),
             TokenKind::Plus,
             TokenKind::Number(dec!(2)),
@@ -279,18 +391,18 @@ mod tests {
             TokenKind::Star,
             TokenKind::Number(dec!(6)),
             // ---
-            TokenKind::Caret,
+            TokenKind::CloseParen,
         ]);
         let mut p = Parser::new(tok);
 
-        let expr = get_expr(p.parse_expr());
+        let expr = get_expr(p.parse_bitwise());
         let (lhs, rhs) = expr.add();
         assert_eq!(*rhs.number(), dec!(3));
         let (lhs, rhs) = lhs.add();
         assert_eq!(*lhs.number(), dec!(1));
         assert_eq!(*rhs.number(), dec!(2));
 
-        let expr = get_expr(p.parse_expr());
+        let expr = get_expr(p.parse_bitwise());
         let (lhs, rhs) = expr.sub();
         {
             let (lhs, rhs) = rhs.mul();
@@ -303,7 +415,7 @@ mod tests {
         assert_eq!(*lhs.number(), dec!(2));
         assert_eq!(*rhs.number(), dec!(3));
 
-        let res = p.parse_expr();
+        let res = p.parse_bitwise();
         assert!(matches!(res, Ok(None)));
     }
 
