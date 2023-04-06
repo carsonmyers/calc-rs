@@ -47,7 +47,8 @@ impl<'a> Tokenizer<'a> {
                 }
             }
             Some(c) if c.is_numeric() => self.parse_number(),
-            _ => unimplemented!(),
+            None => Ok(None),
+            _ => Err(self.input_error()),
         }
     }
 
@@ -253,6 +254,13 @@ impl<'a> Tokenizer<'a> {
         let span = self.input.take_lexeme().to_span();
         Ok(Some(Token { span, kind }))
     }
+
+    fn input_error(&mut self) -> eyre::Report {
+        match self.input.next() {
+            Some(c) => Error::UnexpectedChar(c).into(),
+            None => Error::UnexpectedEOF.into(),
+        }
+    }
 }
 
 pub struct Tokens<'a> {
@@ -302,35 +310,70 @@ mod tests {
     use super::*;
 
     #[test]
+    fn simple_tokens() {
+        let mut input = Input::new("+-/&|^~()2**3*");
+        let mut t = Tokenizer::new(&mut input);
+
+        let tok = get_tok(t.next_token());
+        assert!(matches!(tok.kind, TokenKind::Plus));
+        let tok = get_tok(t.next_token());
+        assert!(matches!(tok.kind, TokenKind::Minus));
+        let tok = get_tok(t.next_token());
+        assert!(matches!(tok.kind, TokenKind::Slash));
+        let tok = get_tok(t.next_token());
+        assert!(matches!(tok.kind, TokenKind::And));
+        let tok = get_tok(t.next_token());
+        assert!(matches!(tok.kind, TokenKind::Pipe));
+        let tok = get_tok(t.next_token());
+        assert!(matches!(tok.kind, TokenKind::Caret));
+        let tok = get_tok(t.next_token());
+        assert!(matches!(tok.kind, TokenKind::Tilde));
+        let tok = get_tok(t.next_token());
+        assert!(matches!(tok.kind, TokenKind::OpenParen));
+        let tok = get_tok(t.next_token());
+        assert!(matches!(tok.kind, TokenKind::CloseParen));
+        let tok = get_tok(t.next_token());
+        assert!(matches!(tok.kind, TokenKind::Number(_)));
+        let tok = get_tok(t.next_token());
+        assert!(matches!(tok.kind, TokenKind::StarStar));
+        let tok = get_tok(t.next_token());
+        assert!(matches!(tok.kind, TokenKind::Number(_)));
+        let tok = get_tok(t.next_token());
+        assert!(matches!(tok.kind, TokenKind::Star));
+        let res = t.next_token();
+        assert!(matches!(res, Ok(None)));
+    }
+
+    #[test]
     fn number() {
         let mut input = Input::new("12.34 0x1a 0b11 0o11 011 11 0");
-        let mut p = Tokenizer::new(&mut input);
+        let mut t = Tokenizer::new(&mut input);
 
-        let tok = get_tok(p.parse_number());
+        let tok = get_tok(t.parse_number());
         assert_eq!(*tok.number(), dec!(12.34));
 
-        p.skip_whitespace();
-        let tok = get_tok(p.parse_number());
+        t.skip_whitespace();
+        let tok = get_tok(t.parse_number());
         assert_eq!(*tok.number(), dec!(26));
 
-        p.skip_whitespace();
-        let tok = get_tok(p.parse_number());
+        t.skip_whitespace();
+        let tok = get_tok(t.parse_number());
         assert_eq!(*tok.number(), dec!(3));
 
-        p.skip_whitespace();
-        let tok = get_tok(p.parse_number());
+        t.skip_whitespace();
+        let tok = get_tok(t.parse_number());
         assert_eq!(*tok.number(), dec!(9));
 
-        p.skip_whitespace();
-        let tok = get_tok(p.parse_number());
+        t.skip_whitespace();
+        let tok = get_tok(t.parse_number());
         assert_eq!(*tok.number(), dec!(9));
 
-        p.skip_whitespace();
-        let tok = get_tok(p.parse_number());
+        t.skip_whitespace();
+        let tok = get_tok(t.parse_number());
         assert_eq!(*tok.number(), dec!(11));
 
-        p.skip_whitespace();
-        let tok = get_tok(p.parse_number());
+        t.skip_whitespace();
+        let tok = get_tok(t.parse_number());
         assert_eq!(*tok.number(), dec!(0));
     }
 
