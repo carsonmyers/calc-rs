@@ -31,6 +31,9 @@ impl<'a> Tokenizer<'a> {
             Some('&') => self.simple_token(TokenKind::And),
             Some('|') => self.simple_token(TokenKind::Pipe),
             Some('^') => self.simple_token(TokenKind::Caret),
+            Some('~') => self.simple_token(TokenKind::Tilde),
+            Some('(') => self.simple_token(TokenKind::OpenParen),
+            Some(')') => self.simple_token(TokenKind::CloseParen),
             Some('*') => {
                 self.input.next();
                 if let Some('*') = self.input.peek() {

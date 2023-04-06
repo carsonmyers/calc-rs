@@ -21,6 +21,7 @@ pub enum TokenKind {
     And,
     Pipe,
     Caret,
+    Tilde,
 }
 
 #[cfg(test)]

@@ -1,8 +1,6 @@
 use std::iter::Peekable;
-use std::str::Chars;
 
 use eyre::Result;
-use rust_decimal::Decimal;
 
 use crate::translate::ast::*;
 use crate::translate::error::Error;
@@ -33,10 +31,15 @@ use crate::translate::tokenizer::Tokens;
 ///     | '/' factor mul_div?
 ///     | \e
 /// exponent ->
-///     | '-'? '(' expr ')'
-///     | '-'? NUMBER
+///     | '-' unit
+///     | '~' unit
+///     | unit
 /// power ->
 ///     | '**' exponent power?
+///     | \e
+/// unit ->
+///     | NUMBER
+///     | '(' expr ')'
 ///     | \e
 /// ```
 pub struct Parser<'a> {
@@ -212,10 +215,22 @@ impl<'a> Parser<'a> {
         match self.peek_kind()? {
             Some(TokenKind::Minus) => {
                 self.next()?;
-                let expr = self.parse_exponent()?.ok_or_else(|| self.input_error())?;
+                let expr = self.parse_unit()?.ok_or_else(|| self.input_error())?;
 
                 Ok(Some(Expr::Neg(Box::new(expr))))
             }
+            Some(TokenKind::Tilde) => {
+                self.next()?;
+                let expr = self.parse_unit()?.ok_or_else(|| self.input_error())?;
+
+                Ok(Some(Expr::BitNot(Box::new(expr))))
+            }
+            _ => self.parse_unit(),
+        }
+    }
+
+    fn parse_unit(&mut self) -> Result<Option<Expr>> {
+        match self.peek_kind()? {
             Some(TokenKind::OpenParen) => {
                 self.next()?;
                 let expr = self.parse_expr()?.ok_or_else(|| self.input_error())?;
@@ -654,6 +669,7 @@ mod tests {
             TokenKind::Minus,
             TokenKind::Number(dec!(4)),
             // ---
+            TokenKind::Tilde,
             TokenKind::OpenParen,
             TokenKind::Number(dec!(1)),
             TokenKind::CloseParen,
@@ -675,7 +691,7 @@ mod tests {
         let expr = get_expr(p.parse_exponent());
         assert_eq!(*expr.neg().number(), dec!(4));
         let expr = get_expr(p.parse_exponent());
-        assert_eq!(*expr.number(), dec!(1));
+        assert_eq!(*expr.bit_not().number(), dec!(1));
         let expr = get_expr(p.parse_exponent());
         assert_eq!(*expr.neg().neg().number(), dec!(1.1));
         let err = get_err(p.parse_exponent());
@@ -694,6 +710,31 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn unit() {
+        let tok = tokens(vec![
+            TokenKind::Number(dec!(1)),
+            // ---
+            TokenKind::OpenParen,
+            TokenKind::Number(dec!(2)),
+            TokenKind::Slash,
+            TokenKind::Number(dec!(3)),
+            TokenKind::CloseParen,
+            // ---
+            TokenKind::CloseParen,
+        ]);
+        let mut p = Parser::new(tok);
+        let expr = get_expr(p.parse_unit());
+        assert_eq!(*expr.number(), dec!(1));
+        let expr = get_expr(p.parse_unit());
+        let (lhs, rhs) = expr.div();
+        assert_eq!(*lhs.number(), dec!(2));
+        assert_eq!(*rhs.number(), dec!(3));
+
+        let res = p.parse_unit();
+        assert!(matches!(res, Ok(None)));
     }
 
     fn get_expr(res: Result<Option<Expr>>) -> Expr {
